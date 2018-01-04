@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (C) 2017 Marco Giammarini
+ * Copyright (C) 2017-2018 Marco Giammarini
  *
  * Authors:
  *  Marco Giammarini <m.giammarini@warcomeb.it>

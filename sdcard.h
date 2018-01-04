@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (C) 2017 Marco Giammarini
+ * Copyright (C) 2017-2018 Marco Giammarini
  *
  * Authors:
  *  Marco Giammarini <m.giammarini@warcomeb.it>
@@ -52,6 +52,7 @@
 #define WARCOMEB_SDCARD_LIBRARY_VERSION     "1.0"
 #define WARCOMEB_SDCARD_LIBRARY_VERSION_M   1
 #define WARCOMEB_SDCARD_LIBRARY_VERSION_m   0
+#define WARCOMEB_SDCARD_LIBRARY_VERSION_bug 0
 #define WARCOMEB_SDCARD_LIBRARY_TIME        1499427261
 
 #include "libohiboard.h"
