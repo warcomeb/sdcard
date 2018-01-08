@@ -130,6 +130,9 @@ static bool SDCard_select (SDCard_Device* dev)
 {
     uint8_t response;
     Gpio_clear(dev->csPin);
+
+    // WARNING: There are a lot of problem with this code for Kingstone card!!
+#if 0
     // Dummy cicle!
     Spi_readByte(dev->device,&response);
 
@@ -143,6 +146,7 @@ static bool SDCard_select (SDCard_Device* dev)
         SDCard_deselect(dev);
         return FALSE;
     }
+#endif
 }
 
 /**
@@ -210,6 +214,12 @@ static SDCard_Errors SDCard_sendCommand (SDCard_Device* dev,
 
     *response = currentResponse;
 
+    if ((cmd != SDCARD_COMMAND_58) &&
+        (cmd != SDCARD_COMMAND_17) &&
+        (cmd != SDCARD_COMMAND_18) &&
+        (cmd != SDCARD_COMMAND_24) &&
+        (cmd != SDCARD_COMMAND_25))
+        SDCard_deselect(dev);
     return SDCARD_ERRORS_OK;
 }
 
@@ -230,13 +240,13 @@ SDCard_Errors SDCard_init (SDCard_Device* dev)
     if (Gpio_get(dev->cpPin) != dev->cpType)
     {
 #ifdef WARCOMEB_SDCARD_DEBUG
-    	Cli_sendString("SDCARD> Card not present");
+    	Cli_sendMessage("SDCARD","Card not present",CLI_MESSAGETYPE_ERROR);
 #endif
 		return SDCARD_ERRORS_CARD_NOT_PRESENT;
     }
 
-    // Send 80 dummy clocks
-    for (i = 0; i < 10; ++i)
+    // Send 120 dummy clocks
+    for (i = 0; i < 15; ++i)
         Spi_writeByte(dev->device,0xFF);
 
     // Reset the card
@@ -254,10 +264,13 @@ SDCard_Errors SDCard_init (SDCard_Device* dev)
 
     // Try to understand the sdcard version and init
     SDCard_sendCommand(dev,SDCARD_COMMAND_8,0x000001AA,&response);
+
     if (response != SDCARD_RESPONSE_IDLE)
     {
         dev->cardVersion  = 1;
+
         SDCard_sendCommand(dev,SDCARD_COMMAND_A41,0x40000000,&response);
+
         // Select the correct command
         if (response <= 1)
         {
@@ -302,13 +315,15 @@ SDCard_Errors SDCard_init (SDCard_Device* dev)
         {
             SDCard_sendCommand(dev,SDCARD_COMMAND_55,0,&response);
             SDCard_sendCommand(dev,SDCARD_COMMAND_A41,0x40000000,&response);
+            dev->delayTime(100);
         } while ((response != SDCARD_RESPONSE_OK) && (dev->currentTime() < time));
 
         if ((time < dev->currentTime()) || (response != SDCARD_RESPONSE_OK))
         {
             SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-    	Cli_sendString("SDCARD> initialization fail");
+            Cli_sendMessage("SDCARD","CMD55/ACMD41 wrong reply or timeout",CLI_MESSAGETYPE_ERROR);
+            Cli_sendMessage("SDCARD","initialization fail",CLI_MESSAGETYPE_ERROR);
 #endif
             return SDCARD_ERRORS_INIT_FAILED;
         }
@@ -324,25 +339,35 @@ SDCard_Errors SDCard_init (SDCard_Device* dev)
             }
             else
             {
+                // Close CMD58
+                SDCard_deselect(dev);
                 SDCard_sendCommand(dev,SDCARD_COMMAND_16,0X00000200,&response);
                 if (response != SDCARD_RESPONSE_OK)
                 {
-                    SDCard_deselect(dev);
+
                     return SDCARD_ERRORS_INIT_FAILED;
                 }
             }
         }
         else
         {
+            // Close CMD58
             SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-        	Cli_sendString("SDCARD> initialization fail");
+            Cli_sendMessage("SDCARD","CMD58 wrong reply",CLI_MESSAGETYPE_ERROR);
+            Cli_sendMessage("SDCARD","initialization fail",CLI_MESSAGETYPE_ERROR);
 #endif
             return SDCARD_ERRORS_INIT_FAILED;
         }
     }
+
     dev->isInit = TRUE;
+    // Must be just closed
     SDCard_deselect(dev);
+
+#ifdef WARCOMEB_SDCARD_DEBUG
+    Cli_sendMessage("SDCARD","card initialized!",CLI_MESSAGETYPE_INFO);
+#endif
 
     return SDCARD_ERRORS_OK;
 }
@@ -362,9 +387,10 @@ SDCard_Errors SDCard_writeBlock (SDCard_Device* dev,
 		retry++;
 		if (retry > SDCARD_MAX_RETRY)
 		{
+		    // Close CMD24
 	        SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-			Cli_sendString("SDCARD> write block CMD24 fail");
+            Cli_sendMessage("SDCARD","CMD24 write block fail",CLI_MESSAGETYPE_ERROR);
 #endif
 			return SDCARD_ERRORS_WRITE_BLOCK_FAILED;
 		}
@@ -394,15 +420,17 @@ SDCard_Errors SDCard_writeBlock (SDCard_Device* dev,
     Spi_readByte(dev->device,&response);
     if ((response & 0x0F) != SDCARD_RESPONSE_FAULT)
     {
+        // Close CMD24
         SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-		Cli_sendString("SDCARD> write block response fault");
+        Cli_sendMessage("SDCARD","write block response fault",CLI_MESSAGETYPE_ERROR);
 #endif
 		return SDCARD_ERRORS_WRITE_BLOCK_FAILED;
     }
 
     SDCard_waitReady(dev,SDCARD_TIMEOUT_WRITE);
 
+    // Close CMD24
     SDCard_deselect(dev);
     return SDCARD_ERRORS_OK;
 }
@@ -428,9 +456,10 @@ SDCard_Errors SDCard_writeBlocks (SDCard_Device* dev,
 		retry++;
 		if (retry > SDCARD_MAX_RETRY)
 		{
+		    // Close CMD25
 	        SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-			Cli_sendString("SDCARD> write blocks CMD25 fail");
+            Cli_sendMessage("SDCARD","CMD25 write blocks fail",CLI_MESSAGETYPE_ERROR);
 #endif
 	        return SDCARD_ERRORS_WRITE_BLOCKS_FAILED;
 		}
@@ -462,9 +491,10 @@ SDCard_Errors SDCard_writeBlocks (SDCard_Device* dev,
         Spi_readByte(dev->device,&response);
         if (response != SDCARD_RESPONSE_FAULT)
         {
+            // Close CMD25
             SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-			Cli_sendString("SDCARD> write blocks response fault");
+            Cli_sendMessage("SDCARD","write blocks response fault",CLI_MESSAGETYPE_ERROR);
 #endif
             return SDCARD_ERRORS_WRITE_BLOCKS_FAILED;
         }
@@ -481,6 +511,7 @@ SDCard_Errors SDCard_writeBlocks (SDCard_Device* dev,
 
     SDCard_waitReady(dev,SDCARD_TIMEOUT_WRITE);
 
+    // Close CMD25
     SDCard_deselect(dev);
     return SDCARD_ERRORS_OK;
 }
@@ -500,9 +531,10 @@ SDCard_Errors SDCard_readBlock (SDCard_Device* dev,
 		retry++;
 		if (retry > SDCARD_MAX_RETRY)
 		{
+		    // Close CMD17
 	        SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-			Cli_sendString("SDCARD> read block CMD17 fail");
+            Cli_sendMessage("SDCARD","CMD17 read block fail",CLI_MESSAGETYPE_ERROR);
 #endif
 	        return SDCARD_ERRORS_READ_BLOCK_FAILED;
 		}
@@ -518,9 +550,10 @@ SDCard_Errors SDCard_readBlock (SDCard_Device* dev,
     } while ((response != 0xFE) && (dev->currentTime() < time));
     if (response != 0xFE)
     {
+        // Close CMD17
         SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-		Cli_sendString("SDCARD> read block failed");
+        Cli_sendMessage("SDCARD","read block failed",CLI_MESSAGETYPE_ERROR);
 #endif
         return SDCARD_ERRORS_READ_BLOCK_FAILED;
     }
@@ -535,6 +568,7 @@ SDCard_Errors SDCard_readBlock (SDCard_Device* dev,
     Spi_readByte(dev->device,&response);
     Spi_readByte(dev->device,&response);
 
+    // Close CMD17
     SDCard_deselect(dev);
     return SDCARD_ERRORS_OK;
 }
@@ -555,9 +589,10 @@ SDCard_Errors SDCard_readBlocks (SDCard_Device* dev,
 		retry++;
 		if (retry > SDCARD_MAX_RETRY)
 		{
+		    // Close CMD18
 	        SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-			Cli_sendString("SDCARD> read blocks CMD18 fail");
+            Cli_sendMessage("SDCARD","CMD18 read blocks fail",CLI_MESSAGETYPE_ERROR);
 #endif
 	        return SDCARD_ERRORS_READ_BLOCKS_FAILED;
 		}
@@ -573,9 +608,10 @@ SDCard_Errors SDCard_readBlocks (SDCard_Device* dev,
     } while ((response != 0xFE) && (dev->currentTime() < time));
     if (response != 0xFE)
     {
+        // Close CMD18
         SDCard_deselect(dev);
 #ifdef WARCOMEB_SDCARD_DEBUG
-		Cli_sendString("SDCARD> read blocks failed");
+        Cli_sendMessage("SDCARD","read blocks failed",CLI_MESSAGETYPE_ERROR);
 #endif
         return SDCARD_ERRORS_READ_BLOCK_FAILED;
     }
@@ -597,15 +633,16 @@ SDCard_Errors SDCard_readBlocks (SDCard_Device* dev,
 
     } while (--count);
 
+    // Close CMD18
+    SDCard_deselect(dev);
+
     // Send STOP command
     SDCard_sendCommand(dev,SDCARD_COMMAND_12,0,&response);
-
-    SDCard_deselect(dev);
 
     if (count > 0)
     {
 #ifdef WARCOMEB_SDCARD_DEBUG
-		Cli_sendString("SDCARD> read blocks fail (count > 0)");
+        Cli_sendMessage("SDCARD","read blocks fail (count > 0)",CLI_MESSAGETYPE_ERROR);
 #endif
         return SDCARD_ERRORS_READ_BLOCKS_FAILED;
     }
@@ -625,7 +662,7 @@ SDCard_Errors SDCard_eraseBlocks (SDCard_Device* dev,
     SDCard_sendCommand(dev,SDCARD_COMMAND_32,blockAddress,&response);
     if (response != SDCARD_RESPONSE_OK)
     {
-        SDCard_deselect(dev);
+//        SDCard_deselect(dev);
         return SDCARD_ERRORS_ERASE_BLOCKS_FAILED;
     }
 
@@ -633,7 +670,7 @@ SDCard_Errors SDCard_eraseBlocks (SDCard_Device* dev,
     SDCard_sendCommand(dev,SDCARD_COMMAND_33,(blockAddress+count-1),&response);
     if (response != SDCARD_RESPONSE_OK)
     {
-        SDCard_deselect(dev);
+//        SDCard_deselect(dev);
         return SDCARD_ERRORS_ERASE_BLOCKS_FAILED;
     }
 
@@ -641,7 +678,7 @@ SDCard_Errors SDCard_eraseBlocks (SDCard_Device* dev,
     SDCard_sendCommand(dev,SDCARD_COMMAND_38,0,&response);
     if (response != SDCARD_RESPONSE_OK)
     {
-        SDCard_deselect(dev);
+//        SDCard_deselect(dev);
         return SDCARD_ERRORS_ERASE_BLOCKS_FAILED;
     }
 
@@ -665,6 +702,7 @@ SDCard_Errors SDCard_getSectorCount (SDCard_Device* dev,
     SDCard_sendCommand(dev,SDCARD_COMMAND_9,0,&response);
     if (response != SDCARD_RESPONSE_OK)
     {
+        // Close CMD9
         SDCard_deselect(dev);
         *size = 0;
         return SDCARD_ERRORS_COMMAND_FAILED;
@@ -680,6 +718,7 @@ SDCard_Errors SDCard_getSectorCount (SDCard_Device* dev,
     if (response != 0xFE)
     {
         *size = 0;
+        // Close CMD9
         SDCard_deselect(dev);
         return SDCARD_ERRORS_READ_BLOCK_FAILED;
     }
@@ -689,6 +728,8 @@ SDCard_Errors SDCard_getSectorCount (SDCard_Device* dev,
     // Read CRC, doesn't used
     Spi_readByte(dev->device,&response);
     Spi_readByte(dev->device,&response);
+    // Close CMD9
+    SDCard_deselect(dev);
 
     // !! The first byte read is the last one!
     if ((csd[0] >> 6) == 1) // SDCARD v.2
@@ -705,7 +746,6 @@ SDCard_Errors SDCard_getSectorCount (SDCard_Device* dev,
         *size = tempSize << (i - 9);
     }
 
-    SDCard_deselect(dev);
     return SDCARD_ERRORS_OK;
 }
 
